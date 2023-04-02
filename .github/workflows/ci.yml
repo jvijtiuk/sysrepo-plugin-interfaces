@@ -140,3 +140,62 @@ jobs:
           SYSREPO_INTERFACES_PLUGIN_PATH: ${{github.workspace}}/build/src/interfaces/ietf-interfaces-plugin
         run: |
           robot robot-ietf-interfaces
+
+  sonarcloud:
+    name: sonarcloud
+    runs-on: ubuntu-latest
+    env:
+      BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Deps-packages
+        shell: bash
+        run: |
+            sudo apt install libnl-3-dev libnl-route-3-dev libnl-nf-3-dev libnl-genl-3-dev libcmocka-dev
+
+      - name: Deps-libyang
+        shell: bash
+        run: |
+          git clone https://github.com/cesnet/libyang
+          cd libyang
+          CC=gcc cmake -B build
+          cmake --build build
+          sudo cmake --install build
+          sudo ldconfig
+
+      - name: Deps-sysrepo
+        shell: bash
+        run: |
+          git clone https://github.com/sysrepo/sysrepo
+          cd sysrepo 
+          CC=gcc cmake -B build
+          cmake --build build
+          sudo cmake --install build
+          sudo ldconfig
+
+      - name: Deps-srpc
+        shell: bash
+        run: |
+          git clone --recurse-submodules https://github.com/telekom/sysrepo-plugins-common
+          cd sysrepo-plugins-common
+          CC=gcc cmake -B build
+          cmake --build build
+          sudo cmake --install build
+          sudo ldconfig
+
+      - name: Install sonar-scanner and build-wrapper
+        uses: SonarSource/sonarcloud-github-c-cpp@v1
+      - name: Run build-wrapper
+        run: |
+          mkdir build
+          cmake -S . -B build -DINTERFACES_PLUGIN=ON -DROUTING_PLUGIN=ON
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/ --config Release
+      - name: Run sonar-scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+        run: |
+          sonar-scanner -X --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
